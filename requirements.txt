@@ -2,6 +2,7 @@
 fastapi
 uvicorn
 sse-starlette
+ddgs
 
 # AI & Orchestration
 langchain-core
@@ -28,3 +29,11 @@ pandas
 structlog
 pytest
 pytest-asyncio
+
+# tools
+httpx
+beautifulsoup4
+langchain-community 
+duckduckgo-search 
+wikipedia 
+arxiv
