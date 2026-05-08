@@ -1,0 +1,30 @@
+# Web Server & API
+fastapi
+uvicorn
+sse-starlette
+
+# AI & Orchestration
+langchain-core
+langgraph
+openai
+tiktoken
+pydantic>=2.0.0
+pydantic-settings
+
+# Database & Background Tasks
+sqlalchemy[asyncio]
+asyncpg
+alembic
+redis
+celery
+
+# Tools & Utilities
+httpx
+beautifulsoup4
+duckduckgo-search
+pandas
+
+# Observability & Testing
+structlog
+pytest
+pytest-asyncio
