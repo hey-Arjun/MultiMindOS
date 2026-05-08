@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 app = FastAPI()
 graph = create_graph()
+config = {"configurable": {"thread_id": "user_123_session_1"}, "recursion_limit": 25}
 
 async def run_agent_system(query: str):
     initial_state = {
@@ -24,28 +25,33 @@ async def run_agent_system(query: str):
     try:
         async for event in graph.astream(initial_state):
             for node_name, output in event.items():
-                # 1. Extract the next step
-                next_action = output.get("next_node", "working...")
                 
-                # 2. Extract the actual final answer if the Synthesis node just finished
-                final_answer = output.get("final_answer")
+                # 1. Capture the core signals
+                next_action = output.get("next_node", "continuing...")
+                final_result = output.get("final_answer") # Check for the synthesis result
                 
+                # 2. Build the output payload
                 payload = {
                     "node": node_name,
                     "update": f"Node {node_name} finished.",
                     "next_step": next_action,
-                    "state_snapshot": {
-                        "tasks_count": len(output.get("sub_tasks", [])),
-                        "outputs_keys": list(output.get("agent_outputs", {}).keys())
-                    }
                 }
+
+                # 3. Add the result if it exists
+                if final_result:
+                    payload["final_result"] = final_result
                 
-                # 3. If we have the answer, put it in the payload!
-                if final_answer:
-                    payload["final_result"] = final_answer
+                # 4. Handle snapshot safely (merging current output with previous knowledge)
+                # Note: output only contains the CHANGES from the last node.
+                payload["state_snapshot"] = {
+                    "tasks_count": len(output.get("sub_tasks", [])),
+                    "outputs_keys": list(output.get("agent_outputs", {}).keys()),
+                    "has_final": bool(final_result)
+                }
                 
                 yield f"data: {json.dumps(payload)}\n\n"
                 await asyncio.sleep(0.2)
+
     except Exception as e:
         # This will catch LLM timeouts, API key issues, etc.
         error_payload = {"error": str(e), "type": "GraphExecutionError"}

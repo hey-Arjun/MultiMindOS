@@ -5,9 +5,11 @@ from app.agents.decomposition import decomposition_node
 from app.agents.retrieval import retrieval_node
 from app.agents.critique import critique_node
 from app.agents.synthesis import synthesis_node
+from langgraph.checkpoint.memory import MemorySaver
 
 def create_graph():
     workflow = StateGraph(State)
+    memory = MemorySaver()
 
     # add nodes
     workflow.add_node("orchestrator", orchestrator_node)
@@ -35,5 +37,5 @@ def create_graph():
     workflow.add_edge("critique", "orchestrator")
     workflow.add_edge("synthesis", END)
 
-    return workflow.compile()
+    return workflow.compile(checkpointer=memory)
 
