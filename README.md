@@ -1,6 +1,6 @@
-# 🤖 Mega_AI: Hierarchical Multi-Agent Orchestration Framework
+# 🤖 MultiMind O.S: Hierarchical Multi-Agent Orchestration Framework
 
-**Mega_AI** is a high-performance, state-graph-based AI ecosystem built on **LangGraph**. It features a "Master Orchestrator" design that manages specialized worker agents, enforces strict token budgets via custom telemetry, and utilizes an "Agentic RAG" pipeline for deep research and autonomous task execution.
+**MultiMind O.S** is a high-performance, state-graph-based AI ecosystem built on **LangGraph**. It features a "Master Orchestrator" design that manages specialized worker agents, enforces strict token budgets via custom telemetry, and utilizes an "Agentic RAG" pipeline for deep research and autonomous task execution.
 
 ---
 
@@ -18,33 +18,83 @@
 ---
 
 ## 🏗️ System Architecture
+The agents/ directory is the core of your multi-agent system. Each file represents a specific "node" in your LangGraph workflow.
 
-The system follows a **Supervisor-Worker** pattern where the State serves as the single source of truth.
+1. orchestrator.py (The Master Controller)
 
-1.  **Decomposition:** The Orchestrator breaks the user query into logical sub-tasks.
-2.  **Parallel Retrieval:** Specialized tools execute sub-tasks in parallel using `asyncio.gather`.
-3.  **Critique:** Results are analyzed for quality; if insufficient, the system re-routes for more data.
-4.  **Synthesis:** The finalized data is condensed into a high-context response.
+This is the central supervisor. It doesn't perform tasks itself; it analyzes the current State to decide the next move.
 
+Logic: Uses a high-reasoning model (like GPT-4o) to check if the current data in agent_outputs is sufficient to answer the query.
 
+Routing: It returns the next_node string, directing the graph to either start searching, critique existing data, or finish the run.
+
+2. decomposition.py (The Planner)
+
+When the Orchestrator decides research is needed, it hands off to this node.
+
+Logic: Breaks a complex user query into smaller, manageable "sub-tasks."
+
+Output: Generates a list of task objects (ID, description, tool type) that the Retrieval node can execute.
+
+3. retrieval.py (The Executor)
+
+This is where the "hands-on" work happens.
+
+Logic: It iterates through the sub_tasks created by the planner. It uses asyncio.gather to run multiple tools (like Web Search, Arxiv, or PDF Parsers) in parallel.
+
+Role: Updates the state with raw information while reporting any tool failures back to the system.
+
+4. critique.py (The Auditor)
+
+A specialized node for quality assurance.
+
+Logic: It reviews the raw data gathered in the Retrieval phase. It looks for hallucinations, missing information, or contradictions.
+
+Decision: It provides a "Critique Report." If the report is negative, the Orchestrator can loop back to Retrieval to fill the gaps.
+
+5. synthesis.py (The Communicator)
+
+The final step before the user receives an answer.
+
+Logic: Takes all verified data from the critique and retrieval steps and condenses it into a clear, natural language response.
+
+Constraints: Ensures the tone matches the user's style and that all sources are properly cited.
+
+6. graph.py (The Architect)
+
+This file doesn't contain agent logic; it contains the plumbing.
+
+Logic: It defines the StateGraph. It adds the nodes from the files above and sets the Edges (the paths between nodes) and Conditional Edges (logic-based jumps).
+
+Output: Compiles the graph into an executable "app" used by main.py.
 
 ---
 
 ## 📂 Project Structure
 
 ```text
-Mega_AI/
+MultiMind OS/
 ├── app/
-│   ├── agents/             # Node Logic (Orchestrator, Retrieval, Critique)
-│   ├── core/
-│   │   ├── config.py       # API Settings & Pricing Tables
-│   │   ├── schema.py       # LangGraph State & Reducer definitions
-│   │   ├── telemetry.py    # Cost tracking & Budget enforcement decorators
-│   │   └── tools.py        # Secure tool dispatcher & external API wrappers
-│   └── main.py             # Compiled StateGraph & FastAPI Entry point
-├── tests/                  # 15+ Logic-based test cases
-├── .env                    # Environment variables (OpenAI, Tavily, etc.)
-└── conftest.py             # Pytest root configuration
+│   ├── agents/               # 🧠 THE BRAIN: Node logic and Graph construction
+│   │   ├── decomposition.py  # Task planning & query breaking
+│   │   ├── retrieval.py      # Tool execution & data gathering
+│   │   ├── critique.py       # Quality control & validation
+│   │   ├── synthesis.py      # Final answer generation
+│   │   ├── orchestrator.py   # Master routing & decision logic
+│   │   └── graph.py          # StateGraph compilation & edge definitions
+│   |
+│   ├── core/                 # Shared utilities & system configurations
+│   │   ├── schema.py         # State TypedDict & Reducers
+│   │   ├── telemetry.py      # Budgeting & Token tracking
+│   │   ├── tools.py          # Secure tool dispatcher
+│   │   └── config.py         # ENV management
+│   ├── db/                   # Database connections (SQLAlchemy/Session)
+│   └── main.py               # Application entry point
+├── tests/                    # Unit, Integration, and Mock tests
+├── Dockerfile                # Containerization config
+├── docker-compose.yml        # Local multi-service orchestration
+├── requirements.txt          # Python dependencies
+└── conftest.py               # Pytest root configuration
 
 ```
 
