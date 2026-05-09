@@ -18,6 +18,11 @@
 ---
 
 ## 🏗️ System Architecture
+
+
+![System Architecture](./aarch/architecturee.png)
+
+
 The agents/ directory is the core of your multi-agent system. Each file represents a specific "node" in your LangGraph workflow.
 
 1. orchestrator.py (The Master Controller)
