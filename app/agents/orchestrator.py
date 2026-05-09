@@ -7,71 +7,105 @@ from typing import Dict, Any
 
 llm = ChatOpenAI(
     model="gpt-4-turbo", 
-    api_key=settings.openai_api_key
+    api_key=settings.openai_api_key,
+    model_kwargs={"response_format": {"type": "json_object"}} # Force JSON mode at provider level
 )
 
 async def orchestrator_node(state: State) -> Dict[str, Any]:
     """
-    Master Orchestrator: Logic for dynamic routing with structured reasoning.
-    Controls the flow between Decomposition, Retrieval, Critique, and Synthesis.
+    Master Orchestrator: Controls the flow of the Graph.
+    Fixes: Infinite loops, missing critique step, and state synchronization.
     """
-    # 1. Extract state information
-    query = state.get("query", "")
-    sub_tasks = state.get("sub_tasks", [])
-    agent_outputs = state.get("agent_outputs", {})
-    outputs_keys = list(agent_outputs.keys())
     
-    # Check if a final answer has already been produced to prevent infinite loops
-    has_final_answer = True if state.get("final_answer") else False
+    # 1. IMMEDIATE EXIT CHECK (The "Loop Killer")
+    # If synthesis already produced a final answer, we terminate immediately.
+    if state.get("final_answer"):
+        print("--- ORCHESTRATOR: Final answer detected. Routing to END. ---")
+        return {"next_node": "end"}
 
-    # 2. Construct the prompt with EXPLICIT instruction blocks
+    # 2. STATE EXTRACTION & DEDUPLICATION
+    query = state.get("query", "")
+    agent_outputs = state.get("agent_outputs", {})
+    history = state.get("messages", [])
+    
+    # Clean sub-tasks to ensure we only look at unique IDs
+    seen_ids = set()
+    unique_tasks = []
+    for task in reversed(state.get("sub_tasks", [])):
+        if task.id not in seen_ids:
+            unique_tasks.append(task)
+            seen_ids.add(task.id)
+    sub_tasks = list(reversed(unique_tasks))
+    
+    # Check what milestones we have hit
+    has_tasks = len(sub_tasks) > 0
+    all_tasks_completed = has_tasks and all(
+        t.id in agent_outputs or t.status == "completed" for t in sub_tasks
+    )
+    has_critique = "critique_report" in agent_outputs
+
+    # 3. CONSTRUCT ENFORCED ROUTING PROMPT
     prompt = f"""
-    You are a Master Orchestrator for an Agentic RAG system.
-    Your job is to examine the current state and decide the next logical step.
+    You are the Master Orchestrator for an AI Research Graph.
+    Your job is to look at the current state and decide the EXACT next node.
 
-    CORE ROUTING RULES:
-    1. If there are no 'Current Sub-tasks', you MUST go to 'decomposition'.
-    2. If there are pending sub-tasks and the 'Outputs Gathered' is missing data for them, go to 'retrieval'.
-    3. If all data is gathered but 'Final Answer Present' is False, you MUST go to 'synthesis' to create the final report.
-    4. Only go to 'critique' if the gathered data seems contradictory or insufficient.
-    5. ONLY route to 'end' if 'Final Answer Present' is True.
+    USER QUERY: {query}
+    
+    CONVERSATION HISTORY:
+    {[m.content for m in history[-3:]]}
 
-    CURRENT STATE:
-    - User Query: {query}
-    - Current Sub-tasks: {sub_tasks}
-    - Outputs Gathered: {outputs_keys}
-    - Final Answer Present: {has_final_answer}
+    CURRENT PROGRESS:
+    - Sub-tasks Created: {has_tasks} ({[t.id for t in sub_tasks]})
+    - Research Data Gathered: {list(agent_outputs.keys())}
+    - All Tasks Done: {all_tasks_completed}
+    - Critique Performed: {has_critique}
 
-    Return ONLY a JSON object:
+    STRICT ROUTING RULES:
+    1. If the query is conversational (greeting, name, simple preference) and history has the info -> 'synthesis'.
+    2. If no sub-tasks exist for a complex research query -> 'decomposition'.
+    3. If sub-tasks exist but research data is missing/incomplete -> 'retrieval'.
+    4. If research data is gathered BUT 'critique_report' is NOT in Data -> 'critique'.
+    5. If data is gathered AND critiqued -> 'synthesis'.
+    6. If a 'final_answer' was already generated (checked by system) -> 'end'.
+
+    Return ONLY JSON:
     {{
-        "reasoning": "Explain why you are choosing the next node based on the rules.",
+        "reasoning": "Explain why you chose the next node based on the rules.",
         "next": "decomposition" | "retrieval" | "critique" | "synthesis" | "end"
     }}
     """
 
-    # 3. Invoke LLM
-    response = await llm.ainvoke([SystemMessage(content=prompt)])
-    
-    # 4. Clean and Parse JSON
-    raw_content = response.content.strip()
-    if raw_content.startswith("```"):
-        raw_content = raw_content.strip("`").replace("json", "", 1).strip()
-    
+    # 4. INVOKE LLM
     try:
+        response = await llm.ainvoke([SystemMessage(content=prompt)])
+        usage = response.response_metadata.get('token_usage', {})
+        
+        # Robust Cleaning
+        raw_content = response.content.strip()
+        if "```json" in raw_content:
+            raw_content = raw_content.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw_content:
+            raw_content = raw_content.split("```")[1].split("```")[0].strip()
+            
         decision = json.loads(raw_content)
-    except json.JSONDecodeError:
-        print(f"--- ORCHESTRATOR ERROR: Failed to parse JSON from {raw_content} ---")
-        # Fallback safety: if it's almost done, try to synthesize; otherwise, end.
-        return {"next_node": "synthesis" if outputs_keys else "end"}
+    except Exception as e:
+        print(f"--- ORCHESTRATOR ERROR: {str(e)}. Defaulting to safety path. ---")
+        # Safety fallback
+        if all_tasks_completed:
+            return {"next_node": "critique" if not has_critique else "synthesis"}
+        return {"next_node": "decomposition"}
 
-    # 5. Log Reasoning for transparency
-    print(f"--- ORCHESTRATOR LOG: {decision.get('reasoning')} ---")
-    
-    # 6. Final safety check on the node name
+    # 5. LOGGING & FINAL VALIDATION
     next_node = decision.get("next", "end")
-    allowed_nodes = ["decomposition", "retrieval", "critique", "synthesis", "end"]
-    
-    if next_node not in allowed_nodes:
+    print(f"--- ORCHESTRATOR REASONING: {decision.get('reasoning')} ---")
+    print(f"--- ROUTING TO: {next_node} ---")
+
+    # Final safety check to prevent invalid node names
+    allowed = ["decomposition", "retrieval", "critique", "synthesis", "end"]
+    if next_node not in allowed:
         next_node = "end"
 
-    return {"next_node": next_node}
+    return {
+        "next_node": next_node,
+        "usage": usage
+    }

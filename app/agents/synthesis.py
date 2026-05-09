@@ -8,32 +8,39 @@ llm = ChatOpenAI(model="gpt-4-turbo", api_key=settings.openai_api_key)
 
 async def synthesis_node(state: State):
     """
-    Compiles all agent outputs into a final, high-quality response.
+    Compiles all agent outputs and Chat history into a final, high-quality response.
     """
     outputs = state.get("agent_outputs", {})
+    history = state.get("messages", [])
     
-    if not outputs:
-        return {
-            "final_answer": "I'm sorry, I couldn't gather enough data to provide a comparison.",
-            "next_node": "orchestrator"
-        }
 
-    prompt = f"""
+    prompt = f""" 
     You are a Lead Research Writer. 
-    Synthesize a final report based on the following:
+    Synthesize a final response for the user.
     
-    Original Query: {state['query']}
-    Research Data: {json.dumps(outputs)}
+    CONVERSATION HISTORY:
+    {history[-5:]} # Gives the LLM context of the last few turns
     
-    Ensure the response is professional, formatted with Markdown, 
-    cited (if links exist), and directly addresses the user's intent.
+    RESEARCH DATA (Tool Outputs): 
+    {json.dumps(outputs) if outputs else "No external research was performed for this specific turn."} 
+    
+    USER QUERY: 
+    {state['query']} 
+    
+    INSTRUCTIONS:
+    1. If the answer is in the Conversation History (e.g., user name, preferences), use it.
+    2. If the answer requires the Research Data, prioritize that.
+    3. If neither contains the answer, politely ask for clarification.
+    4. Ensure the response is professional and formatted with Markdown. 
     """
 
     response = await llm.ainvoke([SystemMessage(content=prompt)])
+    usage = response.response_metadata.get('token_usage', {})
 
     # We return 'orchestrator' so the Master Orchestrator can 
     # verify 'final_answer' exists and then route to 'end'.
     return {
         "final_answer": response.content,
+        "usage": usage,
         "next_node": "orchestrator"
     }

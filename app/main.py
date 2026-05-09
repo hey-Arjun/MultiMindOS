@@ -9,9 +9,11 @@ from dotenv import load_dotenv
 load_dotenv()
 app = FastAPI()
 graph = create_graph()
-config = {"configurable": {"thread_id": "user_123_session_1"}, "recursion_limit": 25}
 
-async def run_agent_system(query: str):
+async def run_agent_system(query: str, session_id: str):
+
+    config = {"configurable": {"thread_id": session_id}, "recursion_limit": 25}
+
     initial_state = {
         "query": query,
         "sub_tasks": [],
@@ -23,7 +25,7 @@ async def run_agent_system(query: str):
     }
 
     try:
-        async for event in graph.astream(initial_state):
+        async for event in graph.astream(initial_state, config=config):
             for node_name, output in event.items():
                 
                 # 1. Capture the core signals
@@ -50,7 +52,7 @@ async def run_agent_system(query: str):
                 }
                 
                 yield f"data: {json.dumps(payload)}\n\n"
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.1)
 
     except Exception as e:
         # This will catch LLM timeouts, API key issues, etc.
@@ -61,4 +63,8 @@ async def run_agent_system(query: str):
 async def submit(request: Request):
     data = await request.json()
     query = data.get("query")
-    return StreamingResponse(run_agent_system(query), media_type="text/event-stream")
+    session_id = data.get("session_id", "default_thread")
+    return StreamingResponse(
+        run_agent_system(query, session_id),
+        media_type="text/event-stream"
+    )

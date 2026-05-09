@@ -35,20 +35,29 @@ async def web_scrapper(url: str) -> str:
     except Exception as e:
         return f"Scraping failed: {str(e)}"
 
-async def execute_tool(tool_name: str, query: str) -> str:
+async def execute_tool(tool_name: str, query: str) -> dict:
     """
     Central dispatcher for tools with safety wrappers.
     """
+    # 1. THE SECURITY GUARDRAIL
+    forbidden_keywords = ["drop table", "delete from", "forget previous", "system prompt"]
+    if any(keyword in query.lower() for keyword in forbidden_keywords):
+        return {
+            "status": "error", 
+            "output": "SECURITY_VIOLATION: Malicious query detected."
+        }
     try:
         if tool_name == "search":
-            # DuckDuckGo is synchronous, so we run in executor to keep loop free
-            return await asyncio.to_thread(search.run, query)
+            content = await asyncio.to_thread(search.run, query)
+            return {"output": content, "status": "success"}
         
         elif tool_name == "wikipedia":
-            return await asyncio.to_thread(wiki.run, query)
+            content = await asyncio.to_thread(wiki.run, query)
+            return {"output": content, "status": "success"}
         
         elif tool_name == "arxiv":
-            return await asyncio.to_thread(arxiv.run, query)
+            content = await asyncio.to_thread(arxiv.run, query)
+            return {"output": content, "status": "success"}
         
         elif tool_name == "scrapper":
             return await web_scrapper(query)

@@ -3,37 +3,51 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
 from app.core.schema import State
 from app.core.config import settings
+from app.core.telemetry import track_agent
 
 llm = ChatOpenAI(model="gpt-4-turbo", api_key=settings.openai_api_key)
 
+@track_agent
 async def critique_node(state: State):
     """
-    Evaluates the quality of retrieved data and the logic of the plan.
+    Evaluates the gathered data for hallucinations, contradictions, and confidence.
     """
     retrieved_data = state.get("agent_outputs", {})
 
-    prompt =f"""
-    You are fact checking & critique Agent.
-    Review the following gathered information for the query: "{state['query']}"
+    prompt = f"""
+    You are a Fact-Checking & Critique Agent.
+    Review the gathered information for the query: "{state['query']}"
+    
     Gathered Data: {json.dumps(retrieved_data)}
 
-    Is this information sufficient, accurate, and relevant? 
-    If yes, suggest 'synthesis'.
-    If no, suggest 'retrieval' and explain what is missing.
+    Evaluate the following:
+    1. Confidence Score: A float between 0.0 and 1.0 (0.2 for wild claims, 0.9 for verified facts).
+    2. Contradictions: Are there conflicting numbers or statements?
+    3. Next Action: If data is poor, suggest 'retrieval'. If good, 'synthesis'.
 
     Return ONLY JSON:
-    {{"assessment": "pass/fail", "feedback": "reasoning", "next_action": "synthesis/retrieval"}}
+    {{
+      "confidence_score": 0.0,
+      "contradictions": ["list", "of", "conflicts"],
+      "assessment": "pass/fail", 
+      "feedback": "detailed reasoning", 
+      "next_action": "synthesis/retrieval"
+    }}
     """
 
     response = await llm.ainvoke([SystemMessage(content=prompt)])
+    usage = response.response_metadata.get('token_usage', {})
+    
+    # Clean and Parse
     clean_content = response.content.strip().replace("```json", "").replace("```", "")
-    critique = json.loads(clean_content)
+    critique_data = json.loads(clean_content)
 
-    # Store the critique in the state so synthesis can see it
-    new_outputs = state.get("agent_outputs", {})
-    new_outputs["critique_report"] = critique["feedback"]
-
+    # Prepare return state
+    # We store the whole object so the test can access confidence_score and contradictions
     return {
-        "agent_outputs": new_outputs,
-        "next_node": "orchestrator" if critique["next_action"] == "retrieval" else "synthesis"
+        "agent_outputs": {
+            "critique_report": critique_data 
+        },
+        "usage": usage,
+        "next_node": "orchestrator" if critique_data["next_action"] == "retrieval" else "synthesis"
     }
