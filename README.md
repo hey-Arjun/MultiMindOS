@@ -19,8 +19,11 @@
 
 ## 🏗️ System Architecture
 
-
-![System Architecture](./aarch/architecturee.png)
+  ```
+<div align="center">
+    <img src="aarch/architecture.png" alt="System Architecture" width="800">
+</div>
+```
 
 
 The agents/ directory is the core of your multi-agent system. Each file represents a specific "node" in your LangGraph workflow.
