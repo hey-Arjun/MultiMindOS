@@ -1,16 +1,12 @@
-services:
-  db:
-    image: postgres:15
-    container_name: orchestrator_db_container
-    environment:
-      # These define the user/pass INSIDE the database
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: orchestrator_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+version: '3.8'
 
-volumes:
-  postgres_data:
+services:
+  mega-ai:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app  # Live reload for development
+    restart: always
